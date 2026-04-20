@@ -32,3 +32,4 @@ httpx
 pyyaml
 jinja2
 aiofiles
+aiohttp

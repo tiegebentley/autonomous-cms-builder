@@ -13,7 +13,8 @@ import shutil
 import subprocess
 import time
 import signal
-import requests
+import asyncio
+import aiohttp
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from .base import BaseAgent
@@ -187,7 +188,7 @@ class IntegratorAgent:
         if self._is_port_in_use(port):
             self.log(f"⚠️ Port {port} already in use, attempting to kill existing process...")
             self._kill_process_on_port(port)
-            time.sleep(2)  # Wait for port to be released
+            await asyncio.sleep(2)  # Wait for port to be released
 
         # Start PHP server with Kirby router in background
         server_process = subprocess.Popen(
@@ -199,7 +200,7 @@ class IntegratorAgent:
         )
 
         # Wait a moment for server to start
-        time.sleep(3)
+        await asyncio.sleep(3)
 
         # Check if server is running
         if server_process.poll() is not None:
@@ -238,17 +239,19 @@ class IntegratorAgent:
         """
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, timeout=5)
-                if response.status_code == 200:
-                    return {
-                        'accessible': True,
-                        'status_code': response.status_code,
-                        'url': url
-                    }
-            except requests.exceptions.RequestException as e:
+                timeout = aiohttp.ClientTimeout(total=5)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url) as response:
+                        if response.status == 200:
+                            return {
+                                'accessible': True,
+                                'status_code': response.status,
+                                'url': url
+                            }
+            except Exception as e:
                 if attempt < max_retries - 1:
                     self.log(f"Retry {attempt + 1}/{max_retries} - Server not ready yet...")
-                    time.sleep(2)
+                    await asyncio.sleep(2)
                 else:
                     return {
                         'accessible': False,
