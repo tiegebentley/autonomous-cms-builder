@@ -13,10 +13,17 @@ from datetime import datetime
 from agents.analyzer import AnalyzerAgent
 from agents.critic import CriticAgent
 from agents.builder import BuilderAgent
+from agents.builder_supabase import SupabaseBuilderAgent
 from agents.tester import TesterAgent
 from agents.applicator import ApplicatorAgent
+from agents.applicator_supabase import SupabaseApplicatorAgent
 from agents.installer import InstallerAgent
 from agents.integrator import IntegratorAgent
+
+# Feature flag — flip to "false" to use the legacy Kirby pipeline.
+# Default: Supabase pipeline (phases 6 & 7 — installer/integrator — are skipped
+# because Supabase is hosted and the React admin runs in the same Vite server).
+USE_SUPABASE_BUILDER = os.getenv("USE_SUPABASE_BUILDER", "true").lower() == "true"
 
 app = FastAPI(
     title="Autonomous CMS Builder",
@@ -252,17 +259,26 @@ async def generate_progress_events(project_id: str):
             yield f"data: {json.dumps({'agent': 'critic', 'status': 'skipped', 'progress': 100, 'message': 'Validation disabled'})}\n\n"
 
         # Phase 3: REAL Builder Agent
-        yield f"data: {json.dumps({'agent': 'builder', 'status': 'in_progress', 'progress': 0, 'message': 'Generating Kirby CMS files...'})}\n\n"
+        builder_label = "Supabase admin CMS" if USE_SUPABASE_BUILDER else "Kirby CMS"
+        yield f"data: {json.dumps({'agent': 'builder', 'status': 'in_progress', 'progress': 0, 'message': f'Generating {builder_label} files...'})}\n\n"
 
-        builder = BuilderAgent(
-            project_path=project["path"],
-            project_name=project["name"],
-            analyzer_output=analyzer_result,
-            critic_output=critic_result or {},
-            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
-        )
+        if USE_SUPABASE_BUILDER:
+            builder = SupabaseBuilderAgent(
+                project_path=project["path"],
+                project_name=project["name"],
+                analyzer_output=analyzer_result,
+                critic_output=critic_result or {},
+            )
+        else:
+            builder = BuilderAgent(
+                project_path=project["path"],
+                project_name=project["name"],
+                analyzer_output=analyzer_result,
+                critic_output=critic_result or {},
+                anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
+            )
 
-        yield f"data: {json.dumps({'agent': 'builder', 'status': 'in_progress', 'progress': 40, 'message': 'Creating blueprints...'})}\n\n"
+        yield f"data: {json.dumps({'agent': 'builder', 'status': 'in_progress', 'progress': 40, 'message': 'Stamping templates...' if USE_SUPABASE_BUILDER else 'Creating blueprints...'})}\n\n"
 
         builder_result = await builder.execute()
         projects[project_id]["builder_result"] = builder_result
@@ -293,13 +309,22 @@ async def generate_progress_events(project_id: str):
         # Phase 5: REAL Applicator Agent
         yield f"data: {json.dumps({'agent': 'applicator', 'status': 'in_progress', 'progress': 0, 'message': 'Creating backup...'})}\n\n"
 
-        applicator = ApplicatorAgent(
-            project_path=project["path"],
-            project_name=project["name"],
-            builder_output=builder_result,
-            tester_output=tester_result,
-            auto_apply=project.get("auto_apply", False)
-        )
+        if USE_SUPABASE_BUILDER:
+            applicator = SupabaseApplicatorAgent(
+                project_path=project["path"],
+                project_name=project["name"],
+                builder_output=builder_result,
+                tester_output=tester_result,
+                auto_apply=project.get("auto_apply", False)
+            )
+        else:
+            applicator = ApplicatorAgent(
+                project_path=project["path"],
+                project_name=project["name"],
+                builder_output=builder_result,
+                tester_output=tester_result,
+                auto_apply=project.get("auto_apply", False)
+            )
 
         yield f"data: {json.dumps({'agent': 'applicator', 'status': 'in_progress', 'progress': 60, 'message': 'Applying changes...'})}\n\n"
 
@@ -311,7 +336,31 @@ async def generate_progress_events(project_id: str):
         apply_status = applicator_result.get("apply_status", "unknown")
         yield f"data: {json.dumps({'agent': 'applicator', 'status': 'completed', 'progress': 100, 'message': f'Status: {apply_status}'})}\n\n"
 
-        # Phase 6: REAL Installer Agent (NEW!)
+        # Phases 6 & 7 (installer + integrator) are Kirby-only. In Supabase mode,
+        # there's no PHP server to start — the React admin runs in the same Vite
+        # dev server as the rest of the client site, and Supabase is hosted.
+        if USE_SUPABASE_BUILDER:
+            for skipped in ("installer", "integrator"):
+                agent_statuses[project_id][skipped]["status"] = "skipped"
+                yield f"data: {json.dumps({'agent': skipped, 'status': 'skipped', 'progress': 100, 'message': 'Not needed in Supabase mode'})}\n\n"
+
+            projects[project_id]["status"] = "completed"
+            next_steps = applicator_result.get("next_steps", [])
+            output_dir = builder_result.get("output_directory", "")
+            final_result = {
+                "analyzer": analyzer_result,
+                "critic": critic_result,
+                "builder": builder_result,
+                "tester": tester_result,
+                "applicator": applicator_result,
+                "next_steps": next_steps,
+                "output_directory": output_dir,
+            }
+            done_msg = f"✅ CMS scaffolded. Output: {output_dir}"
+            yield f"data: {json.dumps({'status': 'completed', 'message': done_msg, 'result': final_result})}\n\n"
+            return
+
+        # ---- Kirby-only phases 6 & 7 below ----
         yield f"data: {json.dumps({'agent': 'installer', 'status': 'in_progress', 'progress': 0, 'message': 'Checking for Kirby CMS...'})}\n\n"
 
         installer = InstallerAgent()
