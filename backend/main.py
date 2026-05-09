@@ -15,6 +15,7 @@ from agents.critic import CriticAgent
 from agents.builder import BuilderAgent
 from agents.builder_supabase import SupabaseBuilderAgent
 from agents.tester import TesterAgent
+from agents.tester_supabase import SupabaseTesterAgent
 from agents.applicator import ApplicatorAgent
 from agents.applicator_supabase import SupabaseApplicatorAgent
 from agents.installer import InstallerAgent
@@ -291,11 +292,18 @@ async def generate_progress_events(project_id: str):
         # Phase 4: REAL Tester Agent
         yield f"data: {json.dumps({'agent': 'tester', 'status': 'in_progress', 'progress': 0, 'message': 'Running tests...'})}\n\n"
 
-        tester = TesterAgent(
-            project_path=project["path"],
-            project_name=project["name"],
-            builder_output=builder_result
-        )
+        if USE_SUPABASE_BUILDER:
+            tester = SupabaseTesterAgent(
+                project_path=project["path"],
+                project_name=project["name"],
+                builder_output=builder_result
+            )
+        else:
+            tester = TesterAgent(
+                project_path=project["path"],
+                project_name=project["name"],
+                builder_output=builder_result
+            )
 
         tester_result = await tester.execute()
         projects[project_id]["tester_result"] = tester_result
