@@ -101,7 +101,7 @@ export default function ProjectInput({ onBuildStart }: ProjectInputProps) {
       <CardHeader>
         <CardTitle>Create CMS Project</CardTitle>
         <CardDescription>
-          Select a frontend project to analyze and generate a Kirby CMS for
+          Select a frontend project to analyze and generate a Supabase-backed admin CMS for
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -1,15 +1,3 @@
--- =============================================================================
--- TEMPLATE — stamped once per detected content type.
--- Placeholders the builder substitutes:
---   {{TABLE_NAME}}      e.g. "services"          (snake_case plural)
---   {{COLUMNS_BLOCK}}   multi-line column defs, e.g.
---                         slug text NOT NULL UNIQUE,
---                         name text NOT NULL,
---                         description text,
---                         display_order integer NOT NULL DEFAULT 0
---   {{ORDER_BY}}        e.g. "display_order"     (column the index is built on)
--- =============================================================================
-
 CREATE TABLE IF NOT EXISTS public.{{TABLE_NAME}} (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   {{COLUMNS_BLOCK}},

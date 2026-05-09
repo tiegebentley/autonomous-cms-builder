@@ -33,7 +33,7 @@ export default function Builder() {
             Autonomous CMS Builder
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            AI-powered multi-agent system that analyzes your frontend projects and automatically generates Kirby CMS configurations
+            AI-powered multi-agent system that analyzes your frontend projects and automatically generates a Supabase-backed admin CMS
           </p>
         </header>
 

@@ -22,6 +22,7 @@ const agents = [
   { id: 'applicator', name: 'Applicator Agent', icon: '💾' },
   { id: 'installer', name: 'Installer Agent', icon: '📦' },
   { id: 'integrator', name: 'Integrator Agent', icon: '🔗' },
+  { id: 'seo', name: 'SEO Auditor', icon: '📊' },
 ];
 
 export default function ProgressDashboard({ projectId, onComplete }: ProgressDashboardProps) {
@@ -56,7 +57,7 @@ export default function ProgressDashboard({ projectId, onComplete }: ProgressDas
         setLogs((prev) => [...prev, logMessage]);
       }
 
-      if (data.status === 'completed') {
+      if (!data.agent && data.status === 'completed') {
         const urls = data.result?.urls;
         if (urls) {
           setCmsUrl(urls.cms);

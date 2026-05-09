@@ -20,6 +20,7 @@ from agents.applicator import ApplicatorAgent
 from agents.applicator_supabase import SupabaseApplicatorAgent
 from agents.installer import InstallerAgent
 from agents.integrator import IntegratorAgent
+from agents.seo_auditor import SeoAuditorAgent
 
 # Feature flag — flip to "false" to use the legacy Kirby pipeline.
 # Default: Supabase pipeline (phases 6 & 7 — installer/integrator — are skipped
@@ -179,6 +180,7 @@ async def build_cms(project: Project):
         "applicator": {"status": "pending", "progress": 0},
         "installer": {"status": "pending", "progress": 0},
         "integrator": {"status": "pending", "progress": 0},
+        "seo": {"status": "pending", "progress": 0},
     }
 
     return {
@@ -352,6 +354,33 @@ async def generate_progress_events(project_id: str):
                 agent_statuses[project_id][skipped]["status"] = "skipped"
                 yield f"data: {json.dumps({'agent': skipped, 'status': 'skipped', 'progress': 100, 'message': 'Not needed in Supabase mode'})}\n\n"
 
+            # ---- Phase 8: SEO Audit (Supabase mode only — Kirby pipeline below has its own flow) ----
+            yield f"data: {json.dumps({'agent': 'seo', 'status': 'in_progress', 'progress': 0, 'message': 'Scanning HTML files...'})}\n\n"
+
+            seo_auditor = SeoAuditorAgent(
+                project_path=project["path"],
+                project_name=project["name"],
+                auto_apply=project.get("auto_apply", False),
+            )
+
+            yield f"data: {json.dumps({'agent': 'seo', 'status': 'in_progress', 'progress': 50, 'message': 'Auditing pages...'})}\n\n"
+
+            try:
+                seo_result = await seo_auditor.execute()
+                projects[project_id]["seo_result"] = seo_result
+                agent_statuses[project_id]["seo"]["status"] = "completed"
+                agent_statuses[project_id]["seo"]["progress"] = 100
+
+                score = seo_result.get("score", 0)
+                fix_count = len(seo_result.get("auto_fixes_applied", []))
+                find_count = len(seo_result.get("findings", []))
+                seo_msg = f"Score: {score}/100 | {find_count} findings | {fix_count} auto-fixed"
+                yield f"data: {json.dumps({'agent': 'seo', 'status': 'completed', 'progress': 100, 'message': seo_msg})}\n\n"
+            except Exception as e:
+                agent_statuses[project_id]["seo"]["status"] = "failed"
+                seo_result = {"audit_status": "failed", "error": str(e)}
+                yield f"data: {json.dumps({'agent': 'seo', 'status': 'failed', 'progress': 0, 'message': f'SEO audit error: {e}'})}\n\n"
+
             projects[project_id]["status"] = "completed"
             next_steps = applicator_result.get("next_steps", [])
             output_dir = builder_result.get("output_directory", "")
@@ -361,6 +390,7 @@ async def generate_progress_events(project_id: str):
                 "builder": builder_result,
                 "tester": tester_result,
                 "applicator": applicator_result,
+                "seo": seo_result,
                 "next_steps": next_steps,
                 "output_directory": output_dir,
             }

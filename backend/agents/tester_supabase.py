@@ -22,6 +22,7 @@ from typing import Any
 from .base import BaseAgent
 
 PLACEHOLDER_RE = re.compile(r"__[A-Z][A-Z0-9_]*__")
+MUSTACHE_RE = re.compile(r"\{\{[A-Z][A-Z0-9_]*\}\}")
 
 REQUIRED_SHELL_FILES = [
     "src/components/AdminRoute.tsx",
@@ -169,7 +170,7 @@ class SupabaseTesterAgent(BaseAgent):
                 result["failed"] += 1
                 result["errors"].append(f"{f.name}: {e}")
                 continue
-            leftover = PLACEHOLDER_RE.findall(content)
+            leftover = PLACEHOLDER_RE.findall(content) + MUSTACHE_RE.findall(content)
             if leftover:
                 result["failed"] += 1
                 result["errors"].append(
