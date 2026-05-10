@@ -372,9 +372,15 @@ async def generate_progress_events(project_id: str):
                 agent_statuses[project_id]["seo"]["progress"] = 100
 
                 score = seo_result.get("score", 0)
+                score_before = seo_result.get("score_before")
                 fix_count = len(seo_result.get("auto_fixes_applied", []))
                 find_count = len(seo_result.get("findings", []))
-                seo_msg = f"Score: {score}/100 | {find_count} findings | {fix_count} auto-fixed"
+                if score_before is not None and score_before != score:
+                    delta_arrow = "↑" if score > score_before else "↓"
+                    seo_msg = (f"Score: {score_before} {delta_arrow} {score}/100 | "
+                               f"{find_count} findings | {fix_count} auto-fixed")
+                else:
+                    seo_msg = f"Score: {score}/100 | {find_count} findings | {fix_count} auto-fixed"
                 yield f"data: {json.dumps({'agent': 'seo', 'status': 'completed', 'progress': 100, 'message': seo_msg})}\n\n"
             except Exception as e:
                 agent_statuses[project_id]["seo"]["status"] = "failed"

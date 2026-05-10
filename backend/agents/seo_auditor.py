@@ -65,8 +65,10 @@ class SeoAuditorAgent(BaseAgent):
             "auto_apply": self.auto_apply,
             "files_scanned": 0,
             "score": 100,
-            "findings": [],          # all issues
-            "auto_fixes_applied": [], # subset that was mechanically fixed
+            "score_before": None,    # before auto-fixes (None when no fixes ran)
+            "findings": [],          # post-fix issues
+            "findings_before": [],   # pre-fix issues (empty when no fixes ran)
+            "auto_fixes_applied": [],
             "report_path": None,
             "errors": [],
         }
@@ -79,35 +81,57 @@ class SeoAuditorAgent(BaseAgent):
             results["errors"].append("No .html files found in project root")
             return results
 
-        all_findings: list[dict[str, Any]] = []
-        all_fixes: list[dict[str, Any]] = []
+        # Pass 1: audit + apply safe fixes
+        findings_pass1, fixes, errors = self._scan_and_optionally_fix(html_files, apply=self.auto_apply)
+        results["errors"].extend(errors)
+        results["auto_fixes_applied"] = fixes
 
-        for html_file in html_files:
-            try:
-                content = html_file.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError) as e:
-                results["errors"].append(f"{html_file.name}: read failed ({e})")
-                continue
+        if fixes:
+            # Fixes were applied → re-audit the now-modified files for the delta
+            results["score_before"] = self._compute_score(findings_pass1)
+            results["findings_before"] = findings_pass1
 
-            soup = BeautifulSoup(content, "lxml")
-            file_findings = self._audit_file(html_file, soup)
-            all_findings.extend(file_findings)
-
-            if self.auto_apply:
-                fixed_soup, fixes = self._apply_safe_fixes(html_file, soup, file_findings)
-                if fixes:
-                    html_file.write_text(str(fixed_soup), encoding="utf-8")
-                    all_fixes.extend(fixes)
-
-        results["findings"] = all_findings
-        results["auto_fixes_applied"] = all_fixes
-        results["score"] = self._compute_score(all_findings)
+            findings_pass2, _, errors2 = self._scan_and_optionally_fix(html_files, apply=False)
+            results["errors"].extend(errors2)
+            results["findings"] = findings_pass2
+            results["score"] = self._compute_score(findings_pass2)
+        else:
+            # No fixes applied → only one pass meaningful
+            results["findings"] = findings_pass1
+            results["score"] = self._compute_score(findings_pass1)
 
         report_path = self._write_report(results)
         results["report_path"] = str(report_path)
 
         results["audit_status"] = "completed"
         return results
+
+    def _scan_and_optionally_fix(
+        self, html_files: list[Path], apply: bool
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+        """Scan all files, optionally apply fixes. Returns (findings, fixes, errors)."""
+        all_findings: list[dict[str, Any]] = []
+        all_fixes: list[dict[str, Any]] = []
+        errors: list[str] = []
+
+        for html_file in html_files:
+            try:
+                content = html_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as e:
+                errors.append(f"{html_file.name}: read failed ({e})")
+                continue
+
+            soup = BeautifulSoup(content, "lxml")
+            file_findings = self._audit_file(html_file, soup)
+            all_findings.extend(file_findings)
+
+            if apply:
+                fixed_soup, fixes = self._apply_safe_fixes(html_file, soup, file_findings)
+                if fixes:
+                    html_file.write_text(str(fixed_soup), encoding="utf-8")
+                    all_fixes.extend(fixes)
+
+        return all_findings, all_fixes, errors
 
     # ---- discovery ----
 
@@ -319,10 +343,21 @@ class SeoAuditorAgent(BaseAgent):
         lines.append("")
         lines.append(f"_Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} by SeoAuditorAgent_")
         lines.append("")
-        lines.append(f"**Score:** {score}/100")
+        score_before = results.get("score_before")
+        if score_before is not None:
+            delta = score - score_before
+            arrow = "↑" if delta > 0 else ("↓" if delta < 0 else "→")
+            lines.append(f"**Score:** {score_before}/100 {arrow} {score}/100 "
+                         f"({'+' if delta >= 0 else ''}{delta} after auto-fixes)")
+        else:
+            lines.append(f"**Score:** {score}/100")
         lines.append(f"**Files scanned:** {results['files_scanned']}")
         lines.append(f"**Findings:** {len(findings)} ({len(by_sev['critical'])} critical, "
                      f"{len(by_sev['high'])} high, {len(by_sev['medium'])} medium, {len(by_sev['low'])} low)")
+        if score_before is not None:
+            findings_before = results.get("findings_before", [])
+            findings_resolved = len(findings_before) - len(findings)
+            lines.append(f"**Issues resolved by auto-fixes:** {findings_resolved}")
         lines.append(f"**Auto-fixes applied:** {len(fixes)}")
         lines.append("")
 

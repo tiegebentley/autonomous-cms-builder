@@ -27,7 +27,9 @@ interface SeoReport {
   audit_status: string;
   files_scanned: number;
   score: number;
+  score_before: number | null;
   findings: SeoFinding[];
+  findings_before: SeoFinding[];
   auto_fixes_applied: SeoFix[];
   report_path: string | null;
 }
@@ -274,6 +276,12 @@ function SeoReportCard({ report }: { report: SeoReport }) {
   const [showFindings, setShowFindings] = useState(true);
 
   const score = report.score;
+  const scoreBefore = report.score_before;
+  const delta = scoreBefore != null ? score - scoreBefore : null;
+  const issuesResolved =
+    scoreBefore != null
+      ? Math.max(0, report.findings_before.length - report.findings.length)
+      : 0;
   const scoreColor =
     score >= 90 ? 'text-green-600 dark:text-green-400'
     : score >= 70 ? 'text-yellow-600 dark:text-yellow-400'
@@ -303,8 +311,21 @@ function SeoReportCard({ report }: { report: SeoReport }) {
             📊 SEO Audit Report
           </CardTitle>
           <div className="text-right">
-            <div className={`text-3xl font-bold ${scoreColor}`}>{score}/100</div>
+            {scoreBefore != null && delta !== null && delta !== 0 ? (
+              <div className="flex items-baseline gap-2 justify-end">
+                <span className="text-lg text-muted-foreground line-through">{scoreBefore}</span>
+                <span className="text-muted-foreground">{delta > 0 ? '↑' : '↓'}</span>
+                <span className={`text-3xl font-bold ${scoreColor}`}>{score}/100</span>
+              </div>
+            ) : (
+              <div className={`text-3xl font-bold ${scoreColor}`}>{score}/100</div>
+            )}
             <div className="text-xs text-muted-foreground">{report.files_scanned} files scanned</div>
+            {issuesResolved > 0 && (
+              <div className="text-xs text-green-600 dark:text-green-400 font-medium">
+                {issuesResolved} issues fixed
+              </div>
+            )}
           </div>
         </div>
       </CardHeader>
